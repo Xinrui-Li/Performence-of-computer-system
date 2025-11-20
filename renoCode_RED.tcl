@@ -9,17 +9,16 @@
 
 set ns [new Simulator]
 
-# --- 1. 读取随机种子（从环境变量 SEED 获取，默认用当前时间）---
+# Read the random seed (obtained from the environment variable SEED, and if not available, uses the current time by default)
 set seed [expr {[info exists ::env(SEED)] ? $::env(SEED) : [clock seconds]}]
 puts "Current random seed: $seed"  ;# 打印种子，验证有效性
 
-# --- 2. 读取瓶颈链路带宽（从环境变量 BW 获取，默认 1000Mb）---
+# Read the bandwidth of the bottleneck link (obtained from the environment variable BW, default value is 1000 Mb)
 set bw [expr {[info exists ::env(BW)] ? $::env(BW) : "1000Mb"}]
 
 $ns color 1 Blue
 $ns color 2 Red
 
-# 注意：文件名保持与算法一致（reno.nam、renoTrace.tr）
 set namfile [open reno.nam w]
 $ns namtrace-all $namfile
 set tracefile1 [open renoTrace.tr w]
@@ -29,7 +28,7 @@ proc finish {} {
     global ns namfile tracefile1
     $ns flush-trace
     close $namfile
-    close $tracefile1  ;# 关闭跟踪文件，避免资源泄露
+    close $tracefile1  ;# Disable the tracking file to prevent resource leakage.
     exit 0
 }
 
@@ -40,20 +39,17 @@ set n4 [$ns node]
 set n5 [$ns node]
 set n6 [$ns node]
 
-# --- 3. 基于种子随机化拓扑参数 ---
-# 瓶颈链路延迟：50ms ±20ms（30~70ms 随机）
+# Bottleneck link delay: 50ms ± 20ms (ranging from 30ms to 70ms randomly)
 set bottleneck_delay [expr {50 + ($seed % 41) - 20}]
-# 队列长度：10 ±5（5~15 随机）
+# Queue length: 10 ± 5 (5 to 15 randomly)
 set queue_limit [expr {10 + ($seed % 11) - 5}]
 
 $ns duplex-link $n1 $n3 4000Mb 500ms RED
 $ns duplex-link $n2 $n3 4000Mb 800ms RED 
-# 应用随机化的瓶颈延迟
 $ns duplex-link $n3 $n4 $bw ${bottleneck_delay}ms RED
 $ns duplex-link $n4 $n5 4000Mb 500ms RED
 $ns duplex-link $n4 $n6 4000Mb 800ms RED
 
-# 应用随机化的队列长度
 $ns queue-limit $n3 $n4 $queue_limit
 $ns queue-limit $n4 $n3 $queue_limit
 
@@ -63,30 +59,27 @@ $ns duplex-link-op $n3 $n4 orient right
 $ns duplex-link-op $n4 $n5 orient right-up
 $ns duplex-link-op $n4 $n6 orient right-down
 
-# --- 4. 随机化 TCP Reno 参数（source1）---
+# Randomize TCP Reno parameters (source1)
 set source1 [new Agent/TCP/Reno]
 $source1 set class_ 2
 $source1 set ttl_ 64
-# 初始窗口：500~999 随机
 $source1 set window_ [expr {500 + ($seed % 500)}]
 $source1 set packet_size_ 1000
-# 重传超时（RTO）：100~299ms 随机
 $source1 set rto_ [expr {100 + ($seed % 200)}]
 
 $ns attach-agent $n1 $source1
-set sink1 [new Agent/TCPSink/Sack1]  ;# 用 Sack1 提高兼容性
+set sink1 [new Agent/TCPSink/Sack1]  ;
 $ns attach-agent $n5 $sink1
 $ns connect $source1 $sink1
 $source1 set fid_ 1
 
-# --- 5. 随机化 TCP Reno 参数（source2，种子偏移避免同步）---
+# Randomize TCP Reno parameters (source2, seed offset to avoid synchronization)
 set source2 [new Agent/TCP/Reno]
 $source2 set class_ 1
 $source2 set ttl_ 64
-# 初始窗口：种子 +100 偏移，保证与 source1 不同
 $source2 set window_ [expr {500 + (($seed + 100) % 500)}]
 $source2 set packet_size_ 1000
-# RTO：种子 +100 偏移
+# RTO：seed +100 
 $source2 set rto_ [expr {100 + (($seed + 100) % 200)}]
 
 $ns attach-agent $n2 $source2
@@ -95,7 +88,7 @@ $ns attach-agent $n6 $sink2
 $ns connect $source2 $sink2
 $source2 set fid_ 2
 
-# 跟踪 TCP 关键变量（cwnd、ssthresh 等）
+# Track key TCP variables (such as cwnd, ssthresh, etc.)
 $source1 attach $tracefile1
 $source1 tracevar cwnd_ 
 $source1 tracevar ssthresh_
@@ -116,10 +109,10 @@ $myftp1 attach-agent $source1
 set myftp2 [new Application/FTP]
 $myftp2 attach-agent $source2
 
-# --- 6. 随机化流启动时间（避免同时启动）---
-# source1 启动时间：0.1~1.0s 随机
+# Randomize the start time of the stream (to avoid simultaneous startup)
+# Startup time: 0.1 to 1.0 seconds, random
 set start1 [expr {0.1 + ($seed % 10) / 10.0}]
-# source2 启动时间：种子 +50 偏移，与 source1 错开
+# Source 2 startup time: Seed + 50 offset, staggered from Source 1
 set start2 [expr {0.1 + (($seed + 50) % 10) / 10.0}]
 
 $ns at $start1 "$myftp1 start"
