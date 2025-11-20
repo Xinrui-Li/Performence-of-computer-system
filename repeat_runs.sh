@@ -8,7 +8,8 @@ check_and_install_python_libs() {
         sudo apt-get update && sudo apt-get install -y python3-pip
     fi
 
-    required_libs=("scipy" "pandas" "numpy")
+    # Add matplotlib for plotting
+    required_libs=("scipy" "pandas" "numpy" "matplotlib")
     for lib in "${required_libs[@]}"; do
         if ! python3 -c "import $lib" &> /dev/null; then
             echo "$lib not found, installing..."
@@ -105,7 +106,7 @@ for ((run=1; run<=NUM_RUNS; run++)); do
     done
 done
 
-# 恢复所有TCL脚本
+# Restore all original TCL scripts
 for ALGO in "${ALGOS[@]}"; do
     TCL_SCRIPT="${ALGO}Code_${QUEUE}.tcl"
     if [ -f "${TCL_SCRIPT}.bak" ]; then
@@ -114,7 +115,7 @@ for ALGO in "${ALGOS[@]}"; do
 done
 echo -e "\nRestored All Original TCL Scripts"
 
-echo -e "\n=== Calculating Statistical Results for Each Algorithm ==="
+echo -e "\n=== Calculating Statistical Results and Generating Plots for Each Algorithm ==="
 for ALGO in "${ALGOS[@]}"; do
     SCENARIO="${ALGO}_${QUEUE}"
     OUT_DIR="repeat_runs_${SCENARIO}_${NUM_RUNS}times"
@@ -124,27 +125,36 @@ for ALGO in "${ALGOS[@]}"; do
 import pandas as pd
 import scipy.stats as stats
 import numpy as np
+import matplotlib.pyplot as plt
+import os
+
+# Set up Chinese font support
+plt.rcParams["font.family"] = ["SimHei", "WenQuanYi Micro Hei", "Heiti TC"]
+# Set plot style
+plt.style.use('default')
 
 ALGO = "${ALGO}"
+QUEUE = "${QUEUE}"
 NUM_RUNS = int('${NUM_RUNS}')
 RESULTS_CSV = '${RESULTS_CSV}'
 OUT_DIR = '${OUT_DIR}'
 
+# Read data
 df = pd.read_csv(RESULTS_CSV)
 valid_runs = len(df.dropna())
 print(f"\n===== Statistical Results for {ALGO} =====")
 print(f"Valid Runs: {valid_runs}/{NUM_RUNS}")
 
-if valid_runs < 2:
-    print("Warning: Insufficient valid runs to calculate confidence intervals")
-else:
+# Generate statistical results
+summary_stats_path = f"{OUT_DIR}/summary_stats.csv"
+if valid_runs >= 2:
     metrics = {
         "throughput_Mbps": "Throughput (Mb/s)",
         "plr_pct": "Packet Loss Rate (%)",
         "cov_stability": "Stability CoV (Lower is Better)",
         "jain_fairness": "Jain Fairness"
     }
-    with open(f"{OUT_DIR}/summary_stats.csv", "w") as f:
+    with open(summary_stats_path, "w") as f:
         f.write("metric,mean,ci_lower,ci_upper\n")
         for col, name in metrics.items():
             data = df[col].dropna()
@@ -161,11 +171,83 @@ else:
             print(f"{name}:")
             print(f"  Mean: {mean}")
             print(f"  95% CI: [{ci_lower}, {ci_upper}]")
-    print(f"Statistical Results Saved to: {OUT_DIR}/summary_stats.csv")
+    print(f"Statistical Results Saved to: {summary_stats_path}")
+else:
+    print("Warning: Insufficient valid runs to calculate confidence intervals")
+
+# ----------------------
+# Generate Plot 1: Trend Plot of Metrics Over Multiple Runs
+# ----------------------
+if valid_runs >= 1:
+    plt.figure(figsize=(10, 6))
+    
+    # Plot Throughput
+    plt.plot(df['run_id'], df['throughput_Mbps'], 'b-', marker='o', label='Total Throughput (Mbps)')
+    # Plot PLR
+    plt.plot(df['run_id'], df['plr_pct'], 'y-', marker='s', label='Avg PLR (%)')
+    # Plot Stability CoV
+    plt.plot(df['run_id'], df['cov_stability'], 'k-', marker='^', label='Stability CoV')
+    # Plot Jain's Fairness Index
+    plt.plot(df['run_id'], df['jain_fairness'], 'orange', marker='d', label="Jain's Index")
+    
+    plt.title(f'{ALGO} + {QUEUE} run {NUM_RUNS} times with random seed')
+    plt.xlabel('Run ID')
+    plt.ylabel('Value')
+    plt.xticks(df['run_id'])
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    trend_plot_path = f"{OUT_DIR}/{ALGO}_{QUEUE}_trend.png"
+    plt.savefig(trend_plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Trend plot saved to: {trend_plot_path}")
+else:
+    print("Warning: Insufficient data to generate trend plot")
+
+# ----------------------
+# Generate Plot 2: 95% Confidence Interval Plot
+# ----------------------
+if valid_runs >= 2 and os.path.exists(summary_stats_path):
+    stats_df = pd.read_csv(summary_stats_path)
+    
+    # Prepare plotting data
+    metrics = stats_df['metric']
+    means = stats_df['mean']
+    ci_lower = stats_df['ci_lower']
+    ci_upper = stats_df['ci_upper']
+    
+    # Calculate error range (upper CI - mean)
+    errors = ci_upper - means
+    
+    plt.figure(figsize=(10, 6))
+    
+    # Plot confidence interval bounds
+    bar_width = 0.35
+    x = np.arange(len(metrics))
+    
+    # Plot lower CI
+    plt.bar(x, ci_lower, bar_width, label='95% CI Lower', color='lightgray')
+    # Plot upper CI (stacked on lower CI)
+    plt.bar(x, ci_upper - ci_lower, bar_width, bottom=ci_lower, label='95% CI Upper', color='darkgray')
+    # Plot mean line
+    plt.plot(x, means, 'orange', marker='o', linewidth=2, label='Average')
+    
+    plt.title(f'95% Confidence Interval for {ALGO} + {QUEUE}')
+    plt.xticks(x, [m.replace('_', ' ') for m in metrics])  # Beautify x-axis labels
+    plt.ylabel('Value')
+    plt.legend()
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+    
+    ci_plot_path = f"{OUT_DIR}/{ALGO}_{QUEUE}_confidence_interval.png"
+    plt.savefig(ci_plot_path, dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Confidence interval plot saved to: {ci_plot_path}")
+else:
+    print("Warning: Insufficient data to generate confidence interval plot")
 END
     else
-        echo "Warning: No results CSV found for ${ALGO}, skipping statistical analysis"
+        echo "Warning: No results CSV found for ${ALGO}, skipping statistical analysis and plotting"
     fi
 done
 
-echo -e "\n=== All Experiments Completed ==="
+echo -e "\n=== All Experiments and Plots Completed ==="
