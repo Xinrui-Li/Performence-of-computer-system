@@ -32,7 +32,13 @@ NUM_RUNS="$3"
 ALGOS=("cubic" "reno" "vegas" "yeah")
 BANDWIDTH="1000Mb"
 
+# At the beginning of the script, define a main folder where all the results will be stored.
+MAIN_OUTPUT_DIR="repeat_runs"
+mkdir -p "${MAIN_OUTPUT_DIR}"
+
 echo "=== Starting ${NUM_RUNS} Repeated Experiments for All Four Algorithms with RED Queue ==="
+echo "All results will be stored in the '${MAIN_OUTPUT_DIR}' directory."
+
 for ((run=1; run<=NUM_RUNS; run++)); do
     echo -e "\n--- Run ${run}/${NUM_RUNS} ---"
     
@@ -42,7 +48,9 @@ for ((run=1; run<=NUM_RUNS; run++)); do
     for ALGO in "${ALGOS[@]}"; do
         echo -e "\n===== Processing Algorithm: ${ALGO} ====="
         SCENARIO="${ALGO}_${QUEUE}"
-        OUT_DIR="repeat_runs_${SCENARIO}_${NUM_RUNS}times"
+        
+        # Update the original OUT_DIR path to be under the MAIN_OUTPUT_DIR
+        OUT_DIR="${MAIN_OUTPUT_DIR}/repeat_runs_${SCENARIO}_${NUM_RUNS}times"
         RUN_LOG="${OUT_DIR}/run_logs"
         RESULTS_CSV="${OUT_DIR}/${SCENARIO}_runs_summary.csv"
         mkdir -p "${OUT_DIR}" "${RUN_LOG}"
@@ -118,8 +126,11 @@ echo -e "\nRestored All Original TCL Scripts"
 echo -e "\n=== Calculating Statistical Results and Generating Plots for Each Algorithm ==="
 for ALGO in "${ALGOS[@]}"; do
     SCENARIO="${ALGO}_${QUEUE}"
-    OUT_DIR="repeat_runs_${SCENARIO}_${NUM_RUNS}times"
+    
+    # Update the paths for the statistics and graph sections
+    OUT_DIR="${MAIN_OUTPUT_DIR}/repeat_runs_${SCENARIO}_${NUM_RUNS}times"
     RESULTS_CSV="${OUT_DIR}/${SCENARIO}_runs_summary.csv"
+    
     if [ -f "${RESULTS_CSV}" ]; then
         python3 - <<END
 import pandas as pd
@@ -251,3 +262,4 @@ END
 done
 
 echo -e "\n=== All Experiments and Plots Completed ==="
+echo "All results are stored in the '${MAIN_OUTPUT_DIR}' directory."
